@@ -10,11 +10,20 @@ st.set_page_config(
 
 def convert_to_hatabarai(input_df):
     """CSVデータを発払い形式に変換する関数"""
-    # 受注IDでグループ化（32列目の10250617）
-    grouped = input_df.groupby(31)  # 0から数えて31が32列目
+    # デバッグ用の出力
+    st.write("データの形状:", input_df.shape)
+    st.write("32列目（注文ID）のユニーク値:", input_df[31].unique())
+    
+    # 受注IDでグループ化（32列目の注文ID）
+    grouped = input_df.groupby(31)
+    st.write("グループ数:", len(grouped))
+    
     result_rows = []
     
     for order_id, group in grouped:
+        # デバッグ用の出力
+        st.write(f"処理中の注文ID: {order_id}, グループの行数: {len(group)}")
+        
         # 42列すべての情報を保持する配列を作成
         row = [""] * 42
         
@@ -53,14 +62,21 @@ def convert_to_hatabarai(input_df):
         
         result_rows.append(row)
     
+    # デバッグ用の出力
+    st.write("処理した行数:", len(result_rows))
+    
     # 結果のDataFrame作成（列名なし）
-    result_df = pd.DataFrame(result_rows)
-    
-    # 1行目に完全な空行を追加
-    empty_row = [""] * 42
-    result_df = pd.concat([pd.DataFrame([empty_row]), result_df], ignore_index=True)
-    
-    return result_df
+    if result_rows:  # 結果がある場合のみDataFrame作成
+        result_df = pd.DataFrame(result_rows)
+        
+        # 1行目に完全な空行を追加
+        empty_row = [""] * 42
+        result_df = pd.concat([pd.DataFrame([empty_row]), result_df], ignore_index=True)
+        
+        return result_df
+    else:
+        st.error("変換結果が空です。データを確認してください。")
+        return None
 
 def main():
     st.title('発払いCSV変換ツール')
@@ -78,28 +94,30 @@ def main():
             input_df = pd.read_csv(uploaded_file, encoding='cp932', dtype=str, header=None)
             st.success('ファイルの読み込みに成功しました。')
             
-            # データプレビュー表示
+            # データの簡単なプレビュー表示
             st.write('データプレビュー（最初の3行）:')
             st.dataframe(input_df.head(3))
             
+            # 変換ボタン
             if st.button('変換開始', type='primary'):
                 try:
                     with st.spinner('変換処理中...'):
                         result_df = convert_to_hatabarai(input_df)
                     
-                    # 変換結果をCSVとして出力（ヘッダーなし）
-                    output = io.BytesIO()
-                    result_df.to_csv(output, encoding='cp932', index=False, header=False)
-                    output.seek(0)
-                    
-                    st.download_button(
-                        label='変換済みCSVをダウンロード',
-                        data=output,
-                        file_name='hatabarai_output.csv',
-                        mime='text/csv'
-                    )
-                    
-                    st.success('✨ 変換が完了しました！')
+                    if result_df is not None:
+                        # 変換結果をCSVとして出力
+                        output = io.BytesIO()
+                        result_df.to_csv(output, encoding='cp932', index=False, header=False)
+                        output.seek(0)
+                        
+                        st.download_button(
+                            label='変換済みCSVをダウンロード',
+                            data=output,
+                            file_name='hatabarai_output.csv',
+                            mime='text/csv'
+                        )
+                        
+                        st.success('✨ 変換が完了しました！')
                     
                 except ValueError as e:
                     st.error(f'⚠️ エラーが発生しました: {str(e)}')
@@ -108,14 +126,6 @@ def main():
                     
         except Exception as e:
             st.error(f'⚠️ CSVファイルの読み込みに失敗しました: {str(e)}')
-    
-    with st.expander('使い方'):
-        st.write('''
-        1. 「ファイルを選択」ボタンをクリックしてCSVファイルをアップロード
-        2. データプレビューを確認
-        3. 「変換開始」ボタンをクリック
-        4. 変換完了後、「変換済みCSVをダウンロード」ボタンからファイルをダウンロード
-        ''')
 
 if __name__ == '__main__':
     main()
