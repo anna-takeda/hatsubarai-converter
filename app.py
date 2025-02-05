@@ -11,7 +11,7 @@ st.set_page_config(
 def convert_to_hatabarai(input_df):
     """CSVデータを発払い形式に変換する関数"""
     # 受注IDでグループ化（33列目の注文番号）
-    grouped = input_df.groupby(input_df.columns[32])
+    grouped = input_df.groupby(32)  # インデックスで列を指定
     result_rows = []
     
     for order_id, group in grouped:
@@ -21,18 +21,18 @@ def convert_to_hatabarai(input_df):
         first_row = group.iloc[0]
         
         # 文字列として取り込んで先頭の0を保持
-        row['A'] = str(first_row.iloc[8])  # 電話番号
-        row['B'] = str(first_row.iloc[10])  # 郵便番号
-        row['C'] = str(first_row.iloc[15]).strip()  # 名前
-        row['D'] = str(first_row.iloc[16]).strip()  # カナ名
-        row['E'] = str(first_row.iloc[19])  # 会社コード
-        row['F'] = str(first_row.iloc[21])  # 会社郵便番号
-        row['G'] = str(first_row.iloc[22]).strip()  # 会社住所
-        row['H'] = str(first_row.iloc[24])  # 会社名
-        row['I'] = str(first_row.iloc[4])  # 依頼日
-        row['J'] = str(first_row.iloc[5])  # 希望配達日
-        row['K'] = str(first_row.iloc[6])  # 時間帯コード
-        row['L'] = str(first_row.iloc[11]).strip()  # 住所
+        row['A'] = str(first_row[8])  # 電話番号
+        row['B'] = str(first_row[10])  # 郵便番号
+        row['C'] = str(first_row[15]).strip()  # 名前
+        row['D'] = str(first_row[16]).strip()  # カナ名
+        row['E'] = str(first_row[19])  # 会社コード
+        row['F'] = str(first_row[21])  # 会社郵便番号
+        row['G'] = str(first_row[22]).strip()  # 会社住所
+        row['H'] = str(first_row[24])  # 会社名
+        row['I'] = str(first_row[4])  # 依頼日
+        row['J'] = str(first_row[5])  # 希望配達日
+        row['K'] = str(first_row[6])  # 時間帯コード
+        row['L'] = str(first_row[11]).strip()  # 住所
 
         # カンマを含む住所の処理
         if ',' in row['L']:
@@ -40,14 +40,14 @@ def convert_to_hatabarai(input_df):
         
         # 商品名の処理（27列目）と数量（42列目）
         for i, (_, item) in enumerate(group.iterrows()):
-            product_name = str(item.iloc[26]).strip()
-            product_id = str(item.iloc[25])
+            product_name = str(item[26]).strip()
+            product_id = str(item[25])
             
             # 商品名の空欄チェック
             if not product_name or product_name == 'nan':
                 raise ValueError(f"注文ID {order_id} の商品名が空欄です。商品IDは {product_id} です。")
             
-            quantity = int(item.iloc[41])
+            quantity = int(item[41])
             
             # 数量に応じた商品名の形式設定
             if quantity >= 2:
@@ -88,8 +88,8 @@ def main():
     
     if uploaded_file:
         try:
-            # 数値を文字列として読み込むように設定
-            input_df = pd.read_csv(uploaded_file, encoding='cp932', dtype=str)
+            # ヘッダーなしで読み込み、数値を文字列として扱う
+            input_df = pd.read_csv(uploaded_file, encoding='cp932', dtype=str, header=None)
             st.success('ファイルの読み込みに成功しました。')
             
             # データの簡単なプレビュー表示
@@ -102,7 +102,7 @@ def main():
                     with st.spinner('変換処理中...'):
                         result_df = convert_to_hatabarai(input_df)
                     
-                    # 変換結果をCSVとして出力（数値フォーマットを無効化）
+                    # 変換結果をCSVとして出力
                     output = io.BytesIO()
                     result_df.to_csv(output, encoding='cp932', index=False, float_format=None)
                     output.seek(0)
