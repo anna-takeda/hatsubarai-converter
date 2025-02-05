@@ -64,13 +64,13 @@ def main():
     uploaded_file = st.file_uploader(
         'CSVファイルをアップロードしてください',
         type=['csv'],
-        help='ANSIエンコーディングのCSVファイルを選択してください。'
+        help='Shift-JISエンコーディングのCSVファイルを選択してください。'
     )
     
     if uploaded_file:
         try:
-            # ファイル読み込み
-            input_df = pd.read_csv(uploaded_file, encoding='ansi')
+            # ファイル読み込み（cp932はShift-JIS/ANSIエンコーディング）
+            input_df = pd.read_csv(uploaded_file, encoding='cp932')
             st.success('ファイルの読み込みに成功しました。')
             
             # データの簡単なプレビュー表示
@@ -85,7 +85,7 @@ def main():
                     
                     # 変換結果をCSVとして出力
                     output = io.BytesIO()
-                    result_df.to_csv(output, encoding='ansi', index=False)
+                    result_df.to_csv(output, encoding='cp932', index=False)
                     output.seek(0)
                     
                     # ダウンロードボタン表示
