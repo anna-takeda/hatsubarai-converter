@@ -17,11 +17,26 @@ def convert_to_hatabarai(input_df):
     for order_id, group in grouped:
         row = {}
         
-        # 住所のスペース削除と処理（12列目）
-        address = str(group.iloc[0, 11]).strip()
-        if ',' in address:
-            address = f'"{address}"'
-        row['L'] = address
+        # 基本情報の転記（最初の行のデータを使用）
+        first_row = group.iloc[0]
+        
+        # 文字列として取り込んで先頭の0を保持
+        row['A'] = str(first_row.iloc[8])  # 電話番号
+        row['B'] = str(first_row.iloc[10])  # 郵便番号
+        row['C'] = str(first_row.iloc[15]).strip()  # 名前
+        row['D'] = str(first_row.iloc[16]).strip()  # カナ名
+        row['E'] = str(first_row.iloc[19])  # 会社コード
+        row['F'] = str(first_row.iloc[21])  # 会社郵便番号
+        row['G'] = str(first_row.iloc[22]).strip()  # 会社住所
+        row['H'] = str(first_row.iloc[24])  # 会社名
+        row['I'] = str(first_row.iloc[4])  # 依頼日
+        row['J'] = str(first_row.iloc[5])  # 希望配達日
+        row['K'] = str(first_row.iloc[6])  # 時間帯コード
+        row['L'] = str(first_row.iloc[11]).strip()  # 住所
+
+        # カンマを含む住所の処理
+        if ',' in row['L']:
+            row['L'] = f'"{row["L"]}"'
         
         # 商品名の処理（27列目）と数量（42列目）
         for i, (_, item) in enumerate(group.iterrows()):
@@ -51,6 +66,10 @@ def convert_to_hatabarai(input_df):
     # 結果のDataFrame作成
     result_df = pd.DataFrame(result_rows)
     
+    # 列の順序を指定
+    column_order = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'AB', 'AD']
+    result_df = result_df.reindex(columns=column_order)
+    
     # 1行目に空行を追加
     result_df = pd.concat([pd.DataFrame([{}]), result_df], ignore_index=True)
     
@@ -69,8 +88,8 @@ def main():
     
     if uploaded_file:
         try:
-            # ファイル読み込み（cp932はShift-JIS/ANSIエンコーディング）
-            input_df = pd.read_csv(uploaded_file, encoding='cp932')
+            # 数値を文字列として読み込むように設定
+            input_df = pd.read_csv(uploaded_file, encoding='cp932', dtype=str)
             st.success('ファイルの読み込みに成功しました。')
             
             # データの簡単なプレビュー表示
@@ -83,9 +102,9 @@ def main():
                     with st.spinner('変換処理中...'):
                         result_df = convert_to_hatabarai(input_df)
                     
-                    # 変換結果をCSVとして出力
+                    # 変換結果をCSVとして出力（数値フォーマットを無効化）
                     output = io.BytesIO()
-                    result_df.to_csv(output, encoding='cp932', index=False)
+                    result_df.to_csv(output, encoding='cp932', index=False, float_format=None)
                     output.seek(0)
                     
                     # ダウンロードボタン表示
