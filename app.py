@@ -192,7 +192,7 @@ def main():
                     label='変換済みCSVをダウンロード',
                     data=output.getvalue(),
                     file_name='hatabarai_output.csv',
-                    mime='text/csv'
+                    mime='application/octet-stream'
                 )
                 
                 if st.button('新しい変換を開始'):
