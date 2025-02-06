@@ -8,9 +8,42 @@ st.set_page_config(
     layout="centered"
 )
 
+def check_product_count(input_df):
+    """注文ごとの商品数をチェックし、3つ以上ある場合は警告を表示する"""
+    order_id_col = input_df.columns[32]
+    grouped = input_df.groupby(input_df[order_id_col])
+    warnings = []
+
+    for order_id, group in grouped:
+        # 商品コードのカラム（26, 28, 30）をチェック
+        product_codes = []
+        for col in [26, 28, 30]:
+            if col < len(input_df.columns):
+                codes = group.iloc[:, col].dropna().unique()
+                product_codes.extend([c for c in codes if str(c).strip() and str(c).strip() != 'nan'])
+        
+        if len(product_codes) >= 3:
+            warnings.append({
+                'order_id': order_id,
+                'product_count': len(product_codes),
+                'products': product_codes
+            })
+    
+    return warnings
+
 def convert_to_hatabarai(input_df):
     """CSVデータを発払い形式に変換する関数"""
     try:
+        # 商品数チェック
+        product_warnings = check_product_count(input_df)
+        if product_warnings:
+            st.warning("⚠️ 以下の注文には3つ以上の商品が含まれています：")
+            for warn in product_warnings:
+                st.write(f"注文ID: {warn['order_id']}")
+                st.write(f"商品数: {warn['product_count']}")
+                st.write(f"商品コード: {', '.join(map(str, warn['products']))}")
+            st.write("---")
+
         # 初期化
         if 'error_items' not in st.session_state:
             st.session_state.error_items = []
@@ -77,6 +110,9 @@ def convert_to_hatabarai(input_df):
                             elif item['index'] == 1:
                                 row[28] = item['product_code']
                                 row[29] = product_name
+                            elif item['index'] == 2:
+                                row[30] = item['product_code']
+                                row[31] = product_name
                             
                             result_rows.append(row)
                         
