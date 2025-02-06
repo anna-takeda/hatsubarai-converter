@@ -46,7 +46,7 @@ def check_empty_product_names(input_df):
     return error_items
 
 def process_data(input_df, error_items):
-    """空欄商品名をセッションの入力値で更新する"""
+    """空欄のある商品名をセッションの入力値で更新する"""
     updated_df = input_df.copy()
     
     for item in st.session_state.error_items:
@@ -64,27 +64,28 @@ def process_data(input_df, error_items):
 
 def combine_rows_by_order_id(df):
     """
-    同じ受注IDの行を1行にまとめる。
-    2つ目の商品名(列27)は、まとめ先(ベース行)の AD列 (0-basedで29) に入れる。
-    3つ目以降は無視（今回の要望に合わせて簡単な実装）
+    同じ受注IDの行を1行にまとめる関数
+      - 受注IDは列32（0-based）を前提とする（必要に応じて変更してください）
+      - 1つ目の行をベースとして、もし2つ目の行が存在すればその「商品名（列27）」を
+        ベース行のAD列（0-basedで29）に書き込みます。
+      - 3つ目以降は無視します（要件に合わせたシンプルな実装）
     """
+    # 受注IDの列の前後空白を除去
+    df[32] = df[32].astype(str).str.strip()
+    
     grouped = df.groupby(df[32], as_index=False)
     output_rows = []
     
     for order_id, group in grouped:
         group = group.reset_index(drop=True)
-        # 1行目をベースにコピー
+        # 1つ目の行をベース行とする
         base_row = group.loc[0].copy()
-        
         if len(group) > 1:
-            # 2つ目の行があれば、その商品名をベース行のAD列(=列29)に入れる
+            # 2つ目の行が存在する場合、2行目の「商品名」（列27）をベース行のAD列（列29）に代入
             second_row = group.loc[1]
-            # "商品名" は列27
             base_row[29] = second_row[27]
-        
         output_rows.append(base_row)
     
-    # groupbyした順序で回収してDataFrame化
     combined_df = pd.DataFrame(output_rows, columns=df.columns)
     return combined_df
 
@@ -130,17 +131,14 @@ def main():
             st.write('データプレビュー（最初の3行）:')
             st.dataframe(input_df.head(3))
             
-            # --- 商品名空欄に対するフォーム入力 ---
+            # --- 商品名空欄に対するフォーム入力（該当する場合） ---
             if st.session_state.error_items:
                 with st.form("product_names_form"):
                     all_filled = True
                     for item in st.session_state.error_items:
                         st.write(f"注文ID: {item['order_id']}, 商品コード: {item['product_code']}")
                         key = f"product_name_{item['order_id']}_{item['product_code']}"
-                        product_name = st.text_input(
-                            "商品名を入力",
-                            key=key
-                        )
+                        product_name = st.text_input("商品名を入力", key=key)
                         if not product_name.strip():
                             all_filled = False
                     
@@ -153,10 +151,10 @@ def main():
                         try:
                             # 空欄補完
                             updated_df = process_data(input_df, st.session_state.error_items)
-                            # ここで受注IDをまとめる処理を実行
+                            # 受注IDごとに行をまとめる
                             combined_df = combine_rows_by_order_id(updated_df)
                             
-                            # 一行目に空行を追加したい場合
+                            # （任意）先頭に空行を追加する場合
                             empty_row = pd.DataFrame([[""] * len(combined_df.columns)], columns=combined_df.columns)
                             result_df = pd.concat([empty_row, combined_df], ignore_index=True)
                             
@@ -167,7 +165,7 @@ def main():
                             st.error(f"データ処理中にエラーが発生しました: {str(e)}")
             
             else:
-                # 商品名空欄が最初からない場合も、同じようにまとめを実行
+                # 商品名空欄が最初からない場合も、受注IDまとめ処理を実行
                 try:
                     combined_df = combine_rows_by_order_id(input_df)
                     empty_row = pd.DataFrame([[""] * len(combined_df.columns)], columns=combined_df.columns)
@@ -184,16 +182,15 @@ def main():
                 st.write("変換後（統合後）のデータプレビュー（最初の3行）:")
                 st.dataframe(st.session_state.converted_df.head(3))
                 
-                # CSVの内容を文字列として生成
+                # CSV出力を文字列にしてからcp932でエンコード
                 csv_str = st.session_state.converted_df.to_csv(index=False, header=False, errors='ignore')
-                # cp932 でエンコードしてバイト列に変換
                 csv_bytes = csv_str.encode('cp932')
                 
                 st.download_button(
                     label='変換済みCSVをダウンロード',
                     data=csv_bytes,
                     file_name='hatabarai_output.csv',
-                    mime='application/octet-stream'  # もしくは mime='text/csv' でもOK
+                    mime='application/octet-stream'
                 )
                 
                 if st.button('新しい変換を開始'):
@@ -201,9 +198,6 @@ def main():
                         if key in st.session_state:
                             del st.session_state[key]
                     st.experimental_rerun()
-
-                
-
                     
         except Exception as e:
             st.error(f'⚠️ CSVファイルの読み込みに失敗しました: {str(e)}')
