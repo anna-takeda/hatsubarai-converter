@@ -11,72 +11,55 @@ st.set_page_config(
 def check_product_count(input_df):
     """注文ごとの商品数をチェックし、3つ以上ある場合は警告を表示する"""
     order_id_col = input_df.columns[32]
+    product_id_col = input_df.columns[31]
     grouped = input_df.groupby(input_df[order_id_col])
     warnings = []
 
     for order_id, group in grouped:
-        # 商品コードのカラム（26, 28, 30）をチェック
-        product_codes = []
-        for col in [26, 28, 30]:
-            if col < len(input_df.columns):
-                codes = group.iloc[:, col].dropna().unique()
-                product_codes.extend([c for c in codes if str(c).strip() and str(c).strip() != 'nan'])
+        # 商品IDでチェック
+        product_ids = group[product_id_col].dropna().unique()
+        product_ids = [pid for pid in product_ids if str(pid).strip() and str(pid).strip() != 'nan']
         
-        if len(product_codes) >= 3:
+        if len(product_ids) >= 3:
             warnings.append({
                 'order_id': order_id,
-                'product_count': len(product_codes),
-                'products': product_codes
+                'product_count': len(product_ids),
+                'products': product_ids
             })
     
     return warnings
 
+def check_empty_product_names(input_df):
+    """商品名が空欄の商品をチェックする"""
+    order_id_col = input_df.columns[32]
+    grouped = input_df.groupby(input_df[order_id_col])
+    error_items = []
+    
+    for order_id, group in grouped:
+        for i, (_, item) in enumerate(group.iterrows()):
+            product_code = str(item[26]).strip() if pd.notna(item[26]) else ""
+            product_name = str(item[27]).strip() if pd.notna(item[27]) else ""
+            
+            if not product_name or product_name == 'nan':
+                error_items.append({
+                    'order_id': order_id,
+                    'product_code': product_code,
+                    'index': i,
+                    'row': [""] * len(input_df.columns)  # 空の行を初期化
+                })
+                # 基本情報を転記
+                first_row = group.iloc[0]
+                for j in range(len(input_df.columns)):
+                    if pd.notna(first_row[j]):
+                        error_items[-1]['row'][j] = str(first_row[j]).strip()
+    
+    return error_items
+
 def convert_to_hatabarai(input_df):
     """CSVデータを発払い形式に変換する関数"""
     try:
-        # 商品数チェック
-        product_warnings = check_product_count(input_df)
-        if product_warnings:
-            st.warning("⚠️ 以下の注文には3つ以上の商品が含まれています：")
-            for warn in product_warnings:
-                st.write(f"注文ID: {warn['order_id']}")
-                st.write(f"商品数: {warn['product_count']}")
-                st.write(f"商品コード: {', '.join(map(str, warn['products']))}")
-            st.write("---")
-
-        # 初期化
-        if 'error_items' not in st.session_state:
-            st.session_state.error_items = []
-            st.session_state.input_df = input_df
-            st.session_state.submitted = False
-            st.session_state.converted_df = None
-            
-            # エラーアイテムの収集
-            order_id_col = input_df.columns[32]
-            grouped = input_df.groupby(input_df[order_id_col])
-            
-            for order_id, group in grouped:
-                for i, (_, item) in enumerate(group.iterrows()):
-                    product_code = str(item[26]).strip() if pd.notna(item[26]) else ""
-                    product_name = str(item[27]).strip() if pd.notna(item[27]) else ""
-                    
-                    if not product_name or product_name == 'nan':
-                        st.session_state.error_items.append({
-                            'order_id': order_id,
-                            'product_code': product_code,
-                            'index': i,
-                            'row': [""] * len(input_df.columns)  # 空の行を初期化
-                        })
-                        # 基本情報を転記
-                        first_row = group.iloc[0]
-                        for j in range(len(input_df.columns)):
-                            if pd.notna(first_row[j]):
-                                st.session_state.error_items[-1]['row'][j] = str(first_row[j]).strip()
-
         # エラーアイテム処理
         if st.session_state.error_items:
-            st.warning("以下の商品について、商品名が空欄です。商品名を入力してください。")
-            
             # フォームで商品名を入力
             with st.form("product_names_form"):
                 all_filled = True
@@ -158,6 +141,12 @@ def main():
     st.title('発払いCSV変換ツール')
     st.write('ヤマトB2のCSVファイルを発払い形式に変換します。')
     
+    # セッション状態の初期化
+    if 'error_items' not in st.session_state:
+        st.session_state.error_items = []
+        st.session_state.submitted = False
+        st.session_state.converted_df = None
+    
     uploaded_file = st.file_uploader(
         'CSVファイルをアップロードしてください',
         type=['csv'],
@@ -168,17 +157,36 @@ def main():
         try:
             # ヘッダーなしで読み込み、すべての列を文字列として扱う
             input_df = pd.read_csv(uploaded_file, encoding='cp932', dtype=str, header=None)
+            
+            # 商品数チェック
+            product_warnings = check_product_count(input_df)
+            if product_warnings:
+                st.warning("⚠️ 以下の注文には3つ以上の商品が含まれています：")
+                for warn in product_warnings:
+                    st.write(f"注文ID: {warn['order_id']}")
+                    st.write(f"商品数: {warn['product_count']}")
+                    st.write(f"商品ID: {', '.join(map(str, warn['products']))}")
+                st.write("---")
+            
+            # 空の商品名チェック
+            if not st.session_state.error_items:  # 初回のみチェック
+                error_items = check_empty_product_names(input_df)
+                if error_items:
+                    st.warning("以下の商品について、商品名が空欄です。商品名を入力してください。")
+                    st.session_state.error_items = error_items
+                    st.session_state.input_df = input_df
+            
             st.success('ファイルの読み込みに成功しました。')
             
             # データプレビュー表示
             st.write('データプレビュー（最初の3行）:')
             st.dataframe(input_df.head(3))
             
-            if st.button('変換開始', type='primary'):
+            if not st.session_state.error_items:
                 with st.spinner('変換処理中...'):
                     result_df = convert_to_hatabarai(input_df)
                 
-                if result_df is not None and 'error_items' not in st.session_state:
+                if result_df is not None:
                     # 変換結果をCSVとして出力
                     output = io.BytesIO()
                     result_df.to_csv(output, encoding='cp932', index=False, header=False)
@@ -192,6 +200,8 @@ def main():
                     )
                     
                     st.success('✨ 変換が完了しました！')
+            else:
+                result_df = convert_to_hatabarai(input_df)
                     
         except Exception as e:
             st.error(f'⚠️ CSVファイルの読み込みに失敗しました: {str(e)}')
