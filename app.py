@@ -1,3 +1,13 @@
+import streamlit as st
+import pandas as pd
+import io
+
+st.set_page_config(
+    page_title="発払いCSV変換ツール",
+    page_icon="📝",
+    layout="centered"
+)
+
 def convert_to_hatabarai(input_df):
     """CSVデータを発払い形式に変換する関数"""
     try:
@@ -127,3 +137,52 @@ def convert_to_hatabarai(input_df):
         st.error(f"データ処理中にエラーが発生しました: {str(e)}")
         st.session_state.conversion_state = 'initial'
         return None
+
+def main():
+    st.title('発払いCSV変換ツール')
+    st.write('ヤマトB2のCSVファイルを発払い形式に変換します。')
+    
+    uploaded_file = st.file_uploader(
+        'CSVファイルをアップロードしてください',
+        type=['csv'],
+        help='Shift-JISエンコーディングのCSVファイルを選択してください。'
+    )
+    
+    if uploaded_file:
+        try:
+            # ヘッダーなしで読み込み、すべての列を文字列として扱う
+            input_df = pd.read_csv(uploaded_file, encoding='cp932', dtype=str, header=None)
+            st.success('ファイルの読み込みに成功しました。')
+            
+            # データプレビュー表示
+            st.write('データプレビュー（最初の3行）:')
+            st.dataframe(input_df.head(3))
+            
+            if st.button('変換開始', type='primary'):
+                try:
+                    with st.spinner('変換処理中...'):
+                        result_df = convert_to_hatabarai(input_df)
+                    
+                    if result_df is not None:
+                        # 変換結果をCSVとして出力
+                        output = io.BytesIO()
+                        result_df.to_csv(output, encoding='cp932', index=False, header=False)
+                        output.seek(0)
+                        
+                        st.download_button(
+                            label='変換済みCSVをダウンロード',
+                            data=output,
+                            file_name='hatabarai_output.csv',
+                            mime='text/csv'
+                        )
+                        
+                        st.success('✨ 変換が完了しました！')
+                    
+                except Exception as e:
+                    st.error(f'⚠️ エラーが発生しました: {str(e)}')
+                    
+        except Exception as e:
+            st.error(f'⚠️ CSVファイルの読み込みに失敗しました: {str(e)}')
+
+if __name__ == '__main__':
+    main()
