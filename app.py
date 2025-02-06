@@ -46,6 +46,7 @@ def check_empty_product_names(input_df):
     return error_items
 
 def process_data(input_df, error_items):
+    """空欄商品名をセッションの入力値で更新する"""
     updated_df = input_df.copy()
     
     for item in st.session_state.error_items:
@@ -59,9 +60,33 @@ def process_data(input_df, error_items):
             row_idx = mask.idxmax()
             updated_df.at[row_idx, 27] = product_name
     
-    empty_row = pd.DataFrame([[""] * len(updated_df.columns)], columns=updated_df.columns)
-    result_df = pd.concat([empty_row, updated_df], ignore_index=True)
-    return result_df
+    return updated_df
+
+def combine_rows_by_order_id(df):
+    """
+    同じ受注IDの行を1行にまとめる。
+    2つ目の商品名(列27)は、まとめ先(ベース行)の AD列 (0-basedで29) に入れる。
+    3つ目以降は無視（今回の要望に合わせて簡単な実装）
+    """
+    grouped = df.groupby(df[32], as_index=False)
+    output_rows = []
+    
+    for order_id, group in grouped:
+        group = group.reset_index(drop=True)
+        # 1行目をベースにコピー
+        base_row = group.loc[0].copy()
+        
+        if len(group) > 1:
+            # 2つ目の行があれば、その商品名をベース行のAD列(=列29)に入れる
+            second_row = group.loc[1]
+            # "商品名" は列27
+            base_row[29] = second_row[27]
+        
+        output_rows.append(base_row)
+    
+    # groupbyした順序で回収してDataFrame化
+    combined_df = pd.DataFrame(output_rows, columns=df.columns)
+    return combined_df
 
 def main():
     st.title('発払いCSV変換ツール')
@@ -83,6 +108,7 @@ def main():
             input_df = pd.read_csv(uploaded_file, encoding='cp932', dtype=str, header=None)
             st.success('ファイルの読み込みに成功しました。')
             
+            # --- 商品数警告チェック（3つ以上ある注文に対して警告） ---
             product_warnings = check_product_count(input_df)
             if product_warnings:
                 st.warning("⚠️ 以下の注文には3つ以上の商品が含まれています：")
@@ -92,10 +118,7 @@ def main():
                     st.write(f"商品コード: {', '.join(map(str, warn['products']))}")
                 st.write("---")
             
-            # 初期化
-            if 'converted_df' not in st.session_state:
-                st.session_state.converted_df = None
-            
+            # --- 商品名空欄チェック ---
             if not st.session_state.error_items:
                 error_items = check_empty_product_names(input_df)
                 if error_items:
@@ -103,10 +126,11 @@ def main():
                     st.session_state.error_items = error_items
                     st.session_state.input_df = input_df
             
+            # プレビュー
             st.write('データプレビュー（最初の3行）:')
             st.dataframe(input_df.head(3))
             
-            # ========= ここからフォーム内 =========
+            # --- 商品名空欄に対するフォーム入力 ---
             if st.session_state.error_items:
                 with st.form("product_names_form"):
                     all_filled = True
@@ -114,7 +138,7 @@ def main():
                         st.write(f"注文ID: {item['order_id']}, 商品コード: {item['product_code']}")
                         key = f"product_name_{item['order_id']}_{item['product_code']}"
                         product_name = st.text_input(
-                            "商品名を入力", 
+                            "商品名を入力",
                             key=key
                         )
                         if not product_name.strip():
@@ -122,36 +146,44 @@ def main():
                     
                     submitted = st.form_submit_button("入力した商品名で続行")
                 
-                # フォームの外で処理するために、フォームの外でフラグを持たせる
                 if submitted:
                     if not all_filled:
                         st.error("すべての商品名を入力してください。")
                     else:
                         try:
-                            result_df = process_data(input_df, st.session_state.error_items)
-                            # セッションに結果を保存しておく
+                            # 空欄補完
+                            updated_df = process_data(input_df, st.session_state.error_items)
+                            # ここで受注IDをまとめる処理を実行
+                            combined_df = combine_rows_by_order_id(updated_df)
+                            
+                            # 一行目に空行を追加したい場合
+                            empty_row = pd.DataFrame([[""] * len(combined_df.columns)], columns=combined_df.columns)
+                            result_df = pd.concat([empty_row, combined_df], ignore_index=True)
+                            
                             st.session_state.converted_df = result_df
-                            st.success("商品名入力が完了しました！ 下のダウンロードボタンからCSVをダウンロードできます。")
+                            st.success("商品名入力＆受注IDまとめが完了しました！下のプレビューとダウンロードボタンを確認してください。")
                             
                         except Exception as e:
                             st.error(f"データ処理中にエラーが発生しました: {str(e)}")
             
             else:
-                # 商品名に空欄がない場合、すぐに変換処理を行う
+                # 商品名空欄が最初からない場合も、同じようにまとめを実行
                 try:
-                    empty_row = pd.DataFrame([[""] * len(input_df.columns)], columns=input_df.columns)
-                    result_df = pd.concat([empty_row, input_df], ignore_index=True)
+                    combined_df = combine_rows_by_order_id(input_df)
+                    empty_row = pd.DataFrame([[""] * len(combined_df.columns)], columns=combined_df.columns)
+                    result_df = pd.concat([empty_row, combined_df], ignore_index=True)
+                    
                     st.session_state.converted_df = result_df
-                    st.success('変換が完了しました！ 下のダウンロードボタンからCSVをダウンロードできます。')
+                    st.success('受注IDまとめ処理が完了しました！下のプレビューとダウンロードボタンを確認してください。')
+                    
                 except Exception as e:
-                    st.error(f"ファイルの出力中にエラーが発生しました: {str(e)}")
+                    st.error(f"処理中にエラーが発生しました: {str(e)}")
             
-            # ========= ここからフォーム外 =========
+            # --- 変換結果のダウンロード ---
             if st.session_state.converted_df is not None:
-                st.write("変換後のデータプレビュー（最初の3行）:")
+                st.write("変換後（統合後）のデータプレビュー（最初の3行）:")
                 st.dataframe(st.session_state.converted_df.head(3))
                 
-                # ダウンロードボタンはフォーム外
                 output = io.BytesIO()
                 st.session_state.converted_df.to_csv(output, encoding='cp932', index=False, header=False, errors='ignore')
                 output.seek(0)
