@@ -33,15 +33,10 @@ def convert_to_hatabarai(input_df):
             for i, (_, item) in enumerate(group.iterrows()):
                 product_code = str(item[26]).strip() if pd.notna(item[26]) else ""
                 product_name = str(item[27]).strip() if pd.notna(item[27]) else ""
-                quantity = item[41]  # 数量
 
                 # 商品名の空欄チェック
                 if not product_name or product_name == 'nan':
                     raise ValueError(f"注文ID {order_id} の商品名が空欄です。商品コードは {product_code} です。")
-                
-                # 数量が存在し、2以上の場合
-                if pd.notna(quantity) and int(quantity) >= 2:
-                    product_name = f"{int(quantity)}★{product_name}"
                 
                 if i == 0:
                     row[26] = product_code
