@@ -54,7 +54,7 @@ def convert_to_hatabarai(input_df):
                         for j in range(len(input_df.columns)):
                             if pd.notna(first_row[j]):
                                 st.session_state.error_items[-1]['row'][j] = str(first_row[j]).strip()
-
+                                
         # エラーアイテムの処理
         if st.session_state.error_items:
             st.warning("以下の商品について、商品名が空欄です。商品名を入力してください。")
