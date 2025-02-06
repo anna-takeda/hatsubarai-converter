@@ -10,15 +10,18 @@ st.set_page_config(
 
 def check_product_count(input_df):
     """注文ごとの商品数をチェックし、3つ以上ある場合は警告を表示する"""
-    order_id_col = input_df.columns[32]
-    product_id_col = input_df.columns[31]
+    order_id_col = input_df.columns[0]  # 注文ID列
+    product_codes = [26, 28, 30]  # 商品コードが入る可能性のある列
     grouped = input_df.groupby(input_df[order_id_col])
     warnings = []
 
     for order_id, group in grouped:
-        # 商品IDでチェック
-        product_ids = group[product_id_col].dropna().unique()
-        product_ids = [pid for pid in product_ids if str(pid).strip() and str(pid).strip() != 'nan']
+        # 各行の商品IDを収集
+        product_ids = []
+        for _, row in group.iterrows():
+            for col in product_codes:
+                if pd.notna(row[col]) and str(row[col]).strip() and str(row[col]).strip() != 'nan':
+                    product_ids.append(str(row[col]).strip())
         
         if len(product_ids) >= 3:
             warnings.append({
@@ -79,33 +82,24 @@ def convert_to_hatabarai(input_df):
                         st.error("すべての商品名を入力してください。")
                     else:
                         st.session_state.submitted = True
-                        result_rows = []
                         
-                        # 入力された商品名でデータを更新
+                        # 入力データを元のDataFrameにマージ
+                        updated_df = input_df.copy()
                         for item in st.session_state.error_items:
-                            row = item['row'].copy()
-                            key = f"product_name_{item['order_id']}_{item['product_code']}"
-                            product_name = st.session_state[key]
+                            order_mask = updated_df[updated_df.columns[0]] == item['order_id']
+                            product_mask = updated_df[updated_df.columns[26]] == item['product_code']
+                            mask = order_mask & product_mask
                             
-                            if item['index'] == 0:
-                                row[26] = item['product_code']
-                                row[27] = product_name
-                            elif item['index'] == 1:
-                                row[28] = item['product_code']
-                                row[29] = product_name
-                            elif item['index'] == 2:
-                                row[30] = item['product_code']
-                                row[31] = product_name
-                            
-                            result_rows.append(row)
+                            if any(mask):
+                                key = f"product_name_{item['order_id']}_{item['product_code']}"
+                                product_name = st.session_state[key]
+                                row_idx = mask.idxmax()
+                                updated_df.at[row_idx, updated_df.columns[27]] = product_name
                         
-                        # 結果のDataFrame作成
-                        if result_rows:
-                            result_df = pd.DataFrame(result_rows)
-                            # 1行目に空行を追加
-                            empty_row = [""] * len(input_df.columns)
-                            result_df = pd.concat([pd.DataFrame([empty_row]), result_df], ignore_index=True)
-                            st.session_state.converted_df = result_df
+                        # 1行目に空行を追加
+                        empty_row = pd.DataFrame([[""] * len(updated_df.columns)], columns=updated_df.columns)
+                        result_df = pd.concat([empty_row, updated_df], ignore_index=True)
+                        st.session_state.converted_df = result_df
 
             # フォームの外でダウンロードボタンを表示
             if st.session_state.submitted and st.session_state.converted_df is not None:
