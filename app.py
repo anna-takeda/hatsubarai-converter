@@ -35,7 +35,7 @@ def combine_rows_by_order_id_new(df):
     """
     # 受注ID（列32）の前後空白を除去
     df[32] = df[32].astype(str).str.strip()
-    # グループ化時に元の順序を保持するため sort=False
+    # 元の順序を保持するため sort=False
     grouped = df.groupby(df[32], as_index=False, sort=False)
     output_rows = []
     for order_id, group in grouped:
@@ -48,7 +48,7 @@ def combine_rows_by_order_id_new(df):
             base_row[28] = ""
             base_row[29] = ""
         output_rows.append(base_row)
-    # ここでインデックスをリセットして連番にする
+    # インデックスをリセットして連番にする
     combined_df = pd.DataFrame(output_rows, columns=df.columns).reset_index(drop=True)
     return combined_df
 
@@ -71,7 +71,7 @@ def check_missing_product_names_combined(df):
                 'row_index': idx,
                 'product_id': row[26] if pd.notna(row[26]) else ""
             })
-        # 2つ目の商品が存在するかは、AC列（28）が空でないかで判断
+        # 2つ目の商品が存在するかどうかは、AC列（28）が空でないかで判断
         if pd.notna(row[28]) and str(row[28]).strip():
             if not (pd.notna(row[29]) and str(row[29]).strip()):
                 errors.append({
@@ -97,6 +97,7 @@ def main():
 
     if uploaded_file:
         try:
+            # CSV読み込み（エンコーディング cp932、ヘッダーなし）
             input_df = pd.read_csv(uploaded_file, encoding='cp932', dtype=str, header=None)
             
             # --- 発送先住所（例：列11）のスペース除去処理（必要に応じて列番号を調整） ---
@@ -146,14 +147,15 @@ def main():
                         idx = item['row_index']
                         if item['position'] == 'first':
                             key = f"product_name_{order_id}_first"
-                            value = st.session_state.get(key, "").strip()
-                            # 1つ目の商品名は列27（0-based）
-                            combined_df.loc[idx, 27] = value
+                            # 入力された値があれば、その行の列27のみ更新
+                            if key in st.session_state and st.session_state[key].strip():
+                                value = st.session_state[key].strip()
+                                combined_df.loc[idx, 27] = value
                         elif item['position'] == 'second':
                             key = f"product_name_{order_id}_second"
-                            value = st.session_state.get(key, "").strip()
-                            # 2つ目の商品名は列29（0-based）
-                            combined_df.loc[idx, 29] = value
+                            if key in st.session_state and st.session_state[key].strip():
+                                value = st.session_state[key].strip()
+                                combined_df.loc[idx, 29] = value
                     st.session_state.converted_df = combined_df
                     st.success("商品名の更新が完了しました！")
             else:
