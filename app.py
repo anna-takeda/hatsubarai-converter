@@ -8,65 +8,115 @@ st.set_page_config(
     layout="centered"
 )
 
-def find_empty_product_names(input_df):
-    """空の商品名を持つ商品を見つける"""
-    error_items = []
-    order_id_col = input_df.columns[32]
-    grouped = input_df.groupby(input_df[order_id_col])
-    
-    for order_id, group in grouped:
-        for i, (_, item) in enumerate(group.iterrows()):
-            product_code = str(item[26]).strip() if pd.notna(item[26]) else ""
-            product_name = str(item[27]).strip() if pd.notna(item[27]) else ""
+def convert_to_hatabarai(input_df):
+    """CSVデータを発払い形式に変換する関数"""
+    try:
+        # 初期化
+        if 'error_items' not in st.session_state:
+            st.session_state.error_items = []
+            st.session_state.input_df = input_df
+            st.session_state.submitted = False
+            st.session_state.converted_df = None
             
-            if not product_name or product_name == 'nan':
-                error_items.append({
-                    'order_id': order_id,
-                    'product_code': product_code,
-                    'index': i
-                })
-    
-    return error_items
+            # エラーアイテムの収集
+            order_id_col = input_df.columns[32]
+            grouped = input_df.groupby(input_df[order_id_col])
+            
+            for order_id, group in grouped:
+                for i, (_, item) in enumerate(group.iterrows()):
+                    product_code = str(item[26]).strip() if pd.notna(item[26]) else ""
+                    product_name = str(item[27]).strip() if pd.notna(item[27]) else ""
+                    
+                    if not product_name or product_name == 'nan':
+                        st.session_state.error_items.append({
+                            'order_id': order_id,
+                            'product_code': product_code,
+                            'index': i,
+                            'row': [""] * len(input_df.columns)  # 空の行を初期化
+                        })
+                        # 基本情報を転記
+                        first_row = group.iloc[0]
+                        for j in range(len(input_df.columns)):
+                            if pd.notna(first_row[j]):
+                                st.session_state.error_items[-1]['row'][j] = str(first_row[j]).strip()
 
-def convert_with_product_names(input_df, product_names):
-    """商品名を指定してCSVを変換"""
-    result_rows = []
-    order_id_col = input_df.columns[32]
-    grouped = input_df.groupby(input_df[order_id_col])
-    
-    for order_id, group in grouped:
-        row = [""] * len(input_df.columns)
-        first_row = group.iloc[0]
-        
-        # 基本情報を転記
-        for i in range(len(input_df.columns)):
-            if pd.notna(first_row[i]):
-                row[i] = str(first_row[i]).strip()
-        
-        # 商品情報の処理
-        for i, (_, item) in enumerate(group.iterrows()):
-            product_code = str(item[26]).strip() if pd.notna(item[26]) else ""
-            product_name = str(item[27]).strip() if pd.notna(item[27]) else ""
+        # エラーアイテムの処理
+        if st.session_state.error_items:
+            st.warning("以下の商品について、商品名が空欄です。商品名を入力してください。")
             
-            key = f"{order_id}_{product_code}"
-            if key in product_names:
-                product_name = product_names[key]
-            
-            if i == 0:
-                row[26] = product_code
-                row[27] = product_name
-            elif i == 1:
-                row[28] = product_code
-                row[29] = product_name
+            # フォームで商品名を入力
+            with st.form("product_names_form"):
+                all_filled = True
+                for item in st.session_state.error_items:
+                    st.write(f"注文ID: {item['order_id']}, 商品コード: {item['product_code']}")
+                    key = f"product_name_{item['order_id']}_{item['product_code']}"
+                    product_name = st.text_input(
+                        f"商品名を入力",
+                        key=key
+                    )
+                    if not product_name.strip():
+                        all_filled = False
+                
+                submitted = st.form_submit_button("入力した商品名で続行")
+                if submitted:
+                    if not all_filled:
+                        st.error("すべての商品名を入力してください。")
+                    else:
+                        st.session_state.submitted = True
+                        result_rows = []
+                        
+                        # 入力された商品名でデータを更新
+                        for item in st.session_state.error_items:
+                            row = item['row'].copy()
+                            key = f"product_name_{item['order_id']}_{item['product_code']}"
+                            product_name = st.session_state[key]
+                            
+                            if item['index'] == 0:
+                                row[26] = item['product_code']
+                                row[27] = product_name
+                            elif item['index'] == 1:
+                                row[28] = item['product_code']
+                                row[29] = product_name
+                            
+                            result_rows.append(row)
+                        
+                        # 結果のDataFrame作成
+                        if result_rows:
+                            result_df = pd.DataFrame(result_rows)
+                            # 1行目に空行を追加
+                            empty_row = [""] * len(input_df.columns)
+                            result_df = pd.concat([pd.DataFrame([empty_row]), result_df], ignore_index=True)
+                            st.session_state.converted_df = result_df
+
+            # フォームの外でダウンロードボタンを表示
+            if st.session_state.submitted and st.session_state.converted_df is not None:
+                output = io.BytesIO()
+                st.session_state.converted_df.to_csv(output, encoding='cp932', index=False, header=False)
+                output.seek(0)
+                
+                st.download_button(
+                    label='変換済みCSVをダウンロード',
+                    data=output,
+                    file_name='hatabarai_output.csv',
+                    mime='text/csv'
+                )
+                
+                st.success('✨ 変換が完了しました！')
+                
+                # 新しい変換を開始するボタン
+                if st.button('新しい変換を開始'):
+                    for key in ['error_items', 'input_df', 'submitted', 'converted_df']:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.experimental_rerun()
+                
+            return None
         
-        result_rows.append(row)
-    
-    # 1行目に空行を追加
-    empty_row = [""] * len(input_df.columns)
-    result_df = pd.DataFrame(result_rows)
-    result_df = pd.concat([pd.DataFrame([empty_row]), result_df], ignore_index=True)
-    
-    return result_df
+        return input_df
+        
+    except Exception as e:
+        st.error(f"データ処理中にエラーが発生しました: {str(e)}")
+        return None
 
 def main():
     st.title('発払いCSV変換ツール')
@@ -80,67 +130,35 @@ def main():
     
     if uploaded_file:
         try:
+            # ヘッダーなしで読み込み、すべての列を文字列として扱う
             input_df = pd.read_csv(uploaded_file, encoding='cp932', dtype=str, header=None)
             st.success('ファイルの読み込みに成功しました。')
             
+            # データプレビュー表示
             st.write('データプレビュー（最初の3行）:')
             st.dataframe(input_df.head(3))
             
-            empty_items = find_empty_product_names(input_df)
-            
-            if empty_items:
-                st.warning("以下の商品について、商品名が空欄です。商品名を入力してください。")
+            if st.button('変換開始', type='primary'):
+                with st.spinner('変換処理中...'):
+                    result_df = convert_to_hatabarai(input_df)
                 
-                product_names = {}
-                # フォームの外で入力フィールドを作成
-                for item in empty_items:
-                    st.write(f"注文ID: {item['order_id']}, 商品コード: {item['product_code']}")
-                    key = f"{item['order_id']}_{item['product_code']}"
-                    product_name = st.text_input(f"商品名を入力", key=key)
-                    if product_name.strip():
-                        product_names[key] = product_name
-                
-                # 変換ボタン
-                if st.button('変換実行', type='primary'):
-                    if len(product_names) == len(empty_items):
-                        with st.spinner('変換処理中...'):
-                            result_df = convert_with_product_names(input_df, product_names)
-                            
-                            output = io.BytesIO()
-                            result_df.to_csv(output, encoding='cp932', index=False, header=False)
-                            output.seek(0)
-                            
-                            st.download_button(
-                                label='変換済みCSVをダウンロード',
-                                data=output,
-                                file_name='hatabarai_output.csv',
-                                mime='text/csv'
-                            )
-                            
-                            st.success('✨ 変換が完了しました！')
-                    else:
-                        st.error("すべての商品名を入力してください。")
-            
-            else:
-                if st.button('変換実行', type='primary'):
-                    with st.spinner('変換処理中...'):
-                        result_df = convert_with_product_names(input_df, {})
-                        
-                        output = io.BytesIO()
-                        result_df.to_csv(output, encoding='cp932', index=False, header=False)
-                        output.seek(0)
-                        
-                        st.download_button(
-                            label='変換済みCSVをダウンロード',
-                            data=output,
-                            file_name='hatabarai_output.csv',
-                            mime='text/csv'
-                        )
-                        
-                        st.success('✨ 変換が完了しました！')
-                        
+                if result_df is not None and 'error_items' not in st.session_state:
+                    # 変換結果をCSVとして出力
+                    output = io.BytesIO()
+                    result_df.to_csv(output, encoding='cp932', index=False, header=False)
+                    output.seek(0)
+                    
+                    st.download_button(
+                        label='変換済みCSVをダウンロード',
+                        data=output,
+                        file_name='hatabarai_output.csv',
+                        mime='text/csv'
+                    )
+                    
+                    st.success('✨ 変換が完了しました！')
+                    
         except Exception as e:
-            st.error(f'⚠️ エラーが発生しました: {str(e)}')
+            st.error(f'⚠️ CSVファイルの読み込みに失敗しました: {str(e)}')
 
 if __name__ == '__main__':
     main()
