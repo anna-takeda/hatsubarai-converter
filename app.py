@@ -10,9 +10,8 @@ st.set_page_config(
 
 def check_product_count(input_df):
     """注文ごとの商品数をチェックし、3つ以上ある場合は警告を表示する"""
-    order_id_col = input_df.columns[0]  # 注文ID列
     product_codes = [26, 28, 30]  # 商品コードが入る可能性のある列
-    grouped = input_df.groupby(input_df[order_id_col])
+    grouped = input_df.groupby(input_df[input_df.columns[35]])  # 注文番号列
     warnings = []
 
     for order_id, group in grouped:
@@ -34,14 +33,15 @@ def check_product_count(input_df):
 
 def check_empty_product_names(input_df):
     """商品名が空欄の商品をチェックする"""
-    order_id_col = input_df.columns[32]
+    order_id_col = input_df.columns[35]  # 注文番号列
     grouped = input_df.groupby(input_df[order_id_col])
     error_items = []
     
     for order_id, group in grouped:
-        for i, (_, item) in enumerate(group.iterrows()):
-            product_code = str(item[26]).strip() if pd.notna(item[26]) else ""
-            product_name = str(item[27]).strip() if pd.notna(item[27]) else ""
+        product_cols = [(26, 27), (28, 29), (30, 31)]  # (商品コード列, 商品名列) のペア
+        for code_col, name_col in product_cols:
+            product_code = str(group.iloc[0][code_col]).strip() if pd.notna(group.iloc[0][code_col]) else ""
+            product_name = str(group.iloc[0][name_col]).strip() if pd.notna(group.iloc[0][name_col]) else ""
             
             if not product_name or product_name == 'nan':
                 error_items.append({
@@ -86,9 +86,12 @@ def convert_to_hatabarai(input_df):
                         # 入力データを元のDataFrameにマージ
                         updated_df = input_df.copy()
                         for item in st.session_state.error_items:
-                            order_mask = updated_df[updated_df.columns[0]] == item['order_id']
-                            product_mask = updated_df[updated_df.columns[26]] == item['product_code']
-                            mask = order_mask & product_mask
+                            order_mask = updated_df[updated_df.columns[35]] == item['order_id']
+                            
+                            # 対応する商品コード列を特定
+                            for code_col, name_col in [(26, 27), (28, 29), (30, 31)]:
+                                product_mask = updated_df[updated_df.columns[code_col]] == item['product_code']
+                                mask = order_mask & product_mask
                             
                             if any(mask):
                                 key = f"product_name_{item['order_id']}_{item['product_code']}"
