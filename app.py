@@ -19,6 +19,8 @@ def convert_to_hatabarai(input_df):
         grouped = input_df.groupby(input_df[order_id_col])
         
         result_rows = []
+        error_items = []  # エラーのある商品情報を保存するリスト
+        
         for order_id, group in grouped:
             # 42列分の空の配列を作成
             row = [""] * len(input_df.columns)
@@ -36,7 +38,13 @@ def convert_to_hatabarai(input_df):
 
                 # 商品名の空欄チェック
                 if not product_name or product_name == 'nan':
-                    raise ValueError(f"注文ID {order_id} の商品名が空欄です。商品コードは {product_code} です。")
+                    error_items.append({
+                        'order_id': order_id,
+                        'product_code': product_code,
+                        'index': i,
+                        'row': row.copy()  # 現在の行データをコピー
+                    })
+                    continue
                 
                 if i == 0:
                     row[26] = product_code
@@ -47,7 +55,34 @@ def convert_to_hatabarai(input_df):
                 elif i > 1:
                     raise ValueError(f"受注ID {order_id} に3つ以上の商品が含まれています。")
             
-            result_rows.append(row)
+            if not any(err['order_id'] == order_id for err in error_items):
+                result_rows.append(row)
+        
+        if error_items:
+            st.warning("以下の商品について、商品名が空欄です。商品名を入力してください。")
+            
+            # エラーのある商品ごとに入力フィールドを表示
+            for item in error_items:
+                st.write(f"注文ID: {item['order_id']}, 商品コード: {item['product_code']}")
+                new_product_name = st.text_input(
+                    f"商品名を入力 (注文ID: {item['order_id']})",
+                    key=f"product_name_{item['order_id']}_{item['product_code']}"
+                )
+                
+                if new_product_name:  # 商品名が入力された場合
+                    row = item['row']
+                    if item['index'] == 0:
+                        row[27] = new_product_name
+                    elif item['index'] == 1:
+                        row[29] = new_product_name
+                    result_rows.append(row)
+            
+            if st.button("入力した商品名で続行"):
+                if not result_rows:
+                    st.error("すべての商品名を入力してください。")
+                    return None
+            else:
+                return None
         
         if not result_rows:
             raise ValueError("変換結果が空です。入力データを確認してください。")
