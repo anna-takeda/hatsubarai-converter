@@ -9,15 +9,58 @@ st.set_page_config(
 )
 
 def check_product_count(input_df):
-    # ... 省略（元のコードをそのまま） ...
+    warnings = []
+    order_groups = input_df.groupby(input_df[32])
+    
+    for order_id, group in order_groups:
+        unique_products = set()
+        for _, row in group.iterrows():
+            if pd.notna(row[26]) and str(row[26]).strip() and str(row[26]) != 'nan':
+                unique_products.add(str(row[26]).strip())
+        
+        if len(unique_products) >= 3:
+            warnings.append({
+                'order_id': order_id,
+                'product_count': len(unique_products),
+                'products': list(unique_products)
+            })
+    
     return warnings
 
 def check_empty_product_names(input_df):
-    # ... 省略（元のコードをそのまま） ...
+    error_items = []
+    order_groups = input_df.groupby(input_df[32])
+    
+    for order_id, group in order_groups:
+        for _, row in group.iterrows():
+            product_code = str(row[26]).strip() if pd.notna(row[26]) else ""
+            product_name = str(row[27]).strip() if pd.notna(row[27]) else ""
+            
+            if product_code and (not product_name or product_name == 'nan'):
+                error_items.append({
+                    'order_id': order_id,
+                    'product_code': product_code,
+                    'row': row.tolist()
+                })
+    
     return error_items
 
 def process_data(input_df, error_items):
-    # ... 省略（元のコードをそのまま） ...
+    updated_df = input_df.copy()
+    
+    for item in st.session_state.error_items:
+        order_mask = updated_df[32] == item['order_id']
+        product_mask = updated_df[26] == item['product_code']
+        mask = order_mask & product_mask
+        
+        if any(mask):
+            key = f"product_name_{item['order_id']}_{item['product_code']}"
+            product_name = st.session_state[key]
+            row_idx = mask.idxmax()
+            updated_df.at[row_idx, 27] = product_name
+    
+    empty_row = pd.DataFrame([[""] * len(updated_df.columns)], columns=updated_df.columns)
+    result_df = pd.concat([empty_row, updated_df], ignore_index=True)
     return result_df
 
 def main():
