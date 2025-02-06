@@ -143,13 +143,13 @@ def main():
     uploaded_file = st.file_uploader(
         'CSVファイルをアップロードしてください',
         type=['csv'],
-        help='ANSIエンコーディングのCSVファイルを選択してください。'
+        help='Shift-JIS(cp932)エンコーディングのCSVファイルを選択してください。'
     )
     
     if uploaded_file:
         try:
-            # iso-8859-1 (ANSI) でファイルを読み込み
-            input_df = pd.read_csv(uploaded_file, encoding='iso-8859-1', dtype=str, header=None)
+            # Shift-JIS (cp932) でファイルを読み込み
+            input_df = pd.read_csv(uploaded_file, encoding='cp932', dtype=str, header=None)
             st.success('ファイルの読み込みに成功しました。')
             
             # 商品数チェック
@@ -175,24 +175,28 @@ def main():
             st.dataframe(input_df.head(3))
             
             if not st.session_state.error_items:
-                # 変換済みCSVダウンロードボタン
-                output = io.BytesIO()
-                # 1行目に空行を追加
-                empty_row = pd.DataFrame([[""] * len(input_df.columns)], columns=input_df.columns)
-                result_df = pd.concat([empty_row, input_df], ignore_index=True)
-                
-                # Shift-JIS (cp932) でエクスポート
-                result_df.to_csv(output, encoding='cp932', index=False, header=False, errors='replace')
-                output.seek(0)
-                
-                st.download_button(
-                    label='変換済みCSVをダウンロード',
-                    data=output,
-                    file_name='hatabarai_output.csv',
-                    mime='text/csv'
-                )
-                
-                st.success('✨ 変換が完了しました！')
+                try:
+                    # 変換済みCSVダウンロードボタン
+                    output = io.BytesIO()
+                    # 1行目に空行を追加
+                    empty_row = pd.DataFrame([[""] * len(input_df.columns)], columns=input_df.columns)
+                    result_df = pd.concat([empty_row, input_df], ignore_index=True)
+                    
+                    # cp932で変換できない文字を無視
+                    result_df.to_csv(output, encoding='cp932', index=False, header=False, errors='ignore')
+                    output.seek(0)
+                    
+                    st.download_button(
+                        label='変換済みCSVをダウンロード',
+                        data=output.getvalue(),
+                        file_name='hatabarai_output.csv',
+                        mime='text/csv'
+                    )
+                    
+                    st.success('✨ 変換が完了しました！')
+                    
+                except Exception as e:
+                    st.error(f"ファイルの出力中にエラーが発生しました: {str(e)}")
             else:
                 convert_to_hatabarai(input_df)
                     
