@@ -9,6 +9,7 @@ st.set_page_config(
 )
 
 def convert_to_hatabarai(input_df):
+    """CSVデータを発払い形式に変換する関数"""
     try:
         # 初期化
         if 'error_items' not in st.session_state:
@@ -21,24 +22,8 @@ def convert_to_hatabarai(input_df):
             order_id_col = input_df.columns[32]
             grouped = input_df.groupby(input_df[order_id_col])
             
-            # 3つ以上の商品がある注文をチェック
-            orders_with_many_items = []
-            for order_id, group in grouped:
-                if len(group) >= 3:
-                    orders_with_many_items.append(order_id)
-            
-            # 警告表示
-            if orders_with_many_items:
-                warning_msg = "⚠️ 以下の注文には3つ以上の商品が含まれています（3つ目以降は処理されません）:\n"
-                for order_id in orders_with_many_items:
-                    warning_msg += f"- 注文ID: {order_id}\n"
-                st.warning(warning_msg)
-            
-            # 既存の処理を継続
             for order_id, group in grouped:
                 for i, (_, item) in enumerate(group.iterrows()):
-                    if i >= 2:  # 3つ目以降はスキップ
-                        continue
                     product_code = str(item[26]).strip() if pd.notna(item[26]) else ""
                     product_name = str(item[27]).strip() if pd.notna(item[27]) else ""
                     
@@ -47,14 +32,14 @@ def convert_to_hatabarai(input_df):
                             'order_id': order_id,
                             'product_code': product_code,
                             'index': i,
-                            'row': [""] * len(input_df.columns)
+                            'row': [""] * len(input_df.columns)  # 空の行を初期化
                         })
                         # 基本情報を転記
                         first_row = group.iloc[0]
                         for j in range(len(input_df.columns)):
                             if pd.notna(first_row[j]):
                                 st.session_state.error_items[-1]['row'][j] = str(first_row[j]).strip()
-                                
+
         # エラーアイテムの処理
         if st.session_state.error_items:
             st.warning("以下の商品について、商品名が空欄です。商品名を入力してください。")
