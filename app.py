@@ -33,34 +33,37 @@ def combine_rows_by_order_id_new(df):
       - もし2行目があれば、2行目の「商品ID」（列26）をベース行の AC 列（0-based で28列目）に、
         また2行目の「商品名」（列27）をベース行の AD 列（0-based で29列目）にセットする。
     """
+    # 受注ID（列32）の前後空白を除去
     df[32] = df[32].astype(str).str.strip()
+    # グループ化時に元の順序を保持するため sort=False
     grouped = df.groupby(df[32], as_index=False, sort=False)
     output_rows = []
     for order_id, group in grouped:
         group = group.reset_index(drop=True)
         base_row = group.loc[0].copy()
         if len(group) > 1:
-            base_row[28] = group.loc[1][26]   # 2行目の商品ID → AC列 (列28)
-            base_row[29] = group.loc[1][27]   # 2行目の商品名 → AD列 (列29)
+            base_row[28] = group.loc[1][26]   # 2行目の商品ID → AC列 (0-based 28)
+            base_row[29] = group.loc[1][27]   # 2行目の商品名 → AD列 (0-based 29)
         else:
             base_row[28] = ""
             base_row[29] = ""
         output_rows.append(base_row)
-    combined_df = pd.DataFrame(output_rows, columns=df.columns)
+    # ここでインデックスをリセットして連番にする
+    combined_df = pd.DataFrame(output_rows, columns=df.columns).reset_index(drop=True)
     return combined_df
 
 # --- まとめたデータのうち、商品名の入力が必要な箇所をチェックする ---
 def check_missing_product_names_combined(df):
     """
     まとめた後の DataFrame について、
-      - 1つ目の商品名（列27）が空欄ならエラーとし、商品ID（列26）も返す。
-      - もし2つ目の商品が存在する（AC列＝28が空でない）場合、2つ目の商品名（列29）が空欄ならエラーとし、商品ID（列28）も返す。
+      - 1つ目の商品名（列27）が空欄ならエラーとし、対応する商品ID（列26）も返す。
+      - もし2つ目の商品が存在する（AC列＝28が空でない）場合、2つ目の商品名（列29）が空欄ならエラーとし、対応する商品ID（列28）も返す。
     各エラー項目は、{'order_id':…, 'position': 'first' or 'second', 'row_index': …, 'product_id': …} の形式とする。
     """
     errors = []
     for idx, row in df.iterrows():
         order_id = row[32]
-        # 1つ目の商品名：列27　（対応する商品ID：列26）
+        # 1つ目の商品名：列27（対応する商品ID：列26）
         if not (pd.notna(row[27]) and str(row[27]).strip()):
             errors.append({
                 'order_id': order_id,
@@ -68,7 +71,7 @@ def check_missing_product_names_combined(df):
                 'row_index': idx,
                 'product_id': row[26] if pd.notna(row[26]) else ""
             })
-        # 2つ目の商品が存在するかどうかは、AC列（28）が空でないかで判断
+        # 2つ目の商品が存在するかは、AC列（28）が空でないかで判断
         if pd.notna(row[28]) and str(row[28]).strip():
             if not (pd.notna(row[29]) and str(row[29]).strip()):
                 errors.append({
@@ -119,7 +122,7 @@ def main():
             st.write('【受注ID統合後のデータプレビュー】')
             st.dataframe(combined_df.head(3))
             
-            # 欠損している商品名のチェック（かつ商品IDもエラー項目に含める）
+            # 欠損している商品名のチェック（エラー項目に商品IDも含める）
             error_items = check_missing_product_names_combined(combined_df)
             if error_items:
                 st.warning("以下の受注IDについて、商品名の入力が必要です。")
@@ -140,17 +143,17 @@ def main():
                 if submitted:
                     for item in error_items:
                         order_id = item['order_id']
-                        row_idx = item['row_index']
+                        idx = item['row_index']
                         if item['position'] == 'first':
                             key = f"product_name_{order_id}_first"
                             value = st.session_state.get(key, "").strip()
                             # 1つ目の商品名は列27（0-based）
-                            combined_df.at[row_idx, 27] = value
+                            combined_df.loc[idx, 27] = value
                         elif item['position'] == 'second':
                             key = f"product_name_{order_id}_second"
                             value = st.session_state.get(key, "").strip()
                             # 2つ目の商品名は列29（0-based）
-                            combined_df.at[row_idx, 29] = value
+                            combined_df.loc[idx, 29] = value
                     st.session_state.converted_df = combined_df
                     st.success("商品名の更新が完了しました！")
             else:
