@@ -13,7 +13,7 @@ def check_product_count(input_df):
     warnings = []
     
     # 注文番号でグループ化
-    order_groups = input_df.groupby(input_df[input_df.columns[35]])
+    order_groups = input_df.groupby(input_df[32])  # 注文番号列 (例: 355518-20241121-0835804964)
     
     for order_id, group in order_groups:
         unique_products = set()
@@ -38,7 +38,7 @@ def check_empty_product_names(input_df):
     error_items = []
     
     # 注文番号でグループ化
-    order_groups = input_df.groupby(input_df[input_df.columns[35]])
+    order_groups = input_df.groupby(input_df[32])  # 注文番号列 (例: 355518-20241121-0835804964)
     
     for order_id, group in order_groups:
         # 商品コードと商品名の列のペアをチェック
@@ -85,7 +85,7 @@ def convert_to_hatabarai(input_df):
                         
                         # 入力された商品名を反映
                         for item in st.session_state.error_items:
-                            order_mask = updated_df[updated_df.columns[35]] == item['order_id']
+                            order_mask = updated_df[32] == item['order_id']  # 注文番号列
                             for code_col, name_col in [(26, 27), (28, 29), (30, 31)]:
                                 code_mask = updated_df[updated_df.columns[code_col]].astype(str).str.strip() == item['product_code']
                                 if any(order_mask & code_mask):
@@ -143,12 +143,13 @@ def main():
     uploaded_file = st.file_uploader(
         'CSVファイルをアップロードしてください',
         type=['csv'],
-        help='Shift-JISエンコーディングのCSVファイルを選択してください。'
+        help='ANSIエンコーディングのCSVファイルを選択してください。'
     )
     
     if uploaded_file:
         try:
-            input_df = pd.read_csv(uploaded_file, encoding='cp932', dtype=str, header=None)
+            # iso-8859-1 (ANSI) でファイルを読み込み
+            input_df = pd.read_csv(uploaded_file, encoding='iso-8859-1', dtype=str, header=None)
             st.success('ファイルの読み込みに成功しました。')
             
             # 商品数チェック
@@ -179,7 +180,9 @@ def main():
                 # 1行目に空行を追加
                 empty_row = pd.DataFrame([[""] * len(input_df.columns)], columns=input_df.columns)
                 result_df = pd.concat([empty_row, input_df], ignore_index=True)
-                result_df.to_csv(output, encoding='cp932', index=False, header=False)
+                
+                # Shift-JIS (cp932) でエクスポート
+                result_df.to_csv(output, encoding='cp932', index=False, header=False, errors='replace')
                 output.seek(0)
                 
                 st.download_button(
