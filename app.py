@@ -1,45 +1,40 @@
 def convert_to_hatabarai(input_df):
     """CSVデータを発払い形式に変換する関数"""
-    # まず、33列目（インデックス32）の注文IDを確認
-    st.write("データの形状:", input_df.shape)
-    
     try:
         # セッションステートの初期化
-        if 'error_items' not in st.session_state:
+        if 'conversion_state' not in st.session_state:
+            st.session_state.conversion_state = 'initial'
             st.session_state.error_items = []
-        if 'product_names' not in st.session_state:
             st.session_state.product_names = {}
-        
-        # 注文IDで行をグループ化（CSVの見た目の33列目の注文番号、インデックスは32）
-        order_id_col = input_df.columns[32]  # 33列目のカラム名を取得
-        grouped = input_df.groupby(input_df[order_id_col])
-        
-        result_rows = []
-        
-        # 初回実行時のみエラーアイテムを収集
-        if not st.session_state.error_items:
+            st.session_state.result_rows = []
+
+        # 初期状態での処理
+        if st.session_state.conversion_state == 'initial':
+            order_id_col = input_df.columns[32]
+            grouped = input_df.groupby(input_df[order_id_col])
+            
             for order_id, group in grouped:
-                # 42列分の空の配列を作成
                 row = [""] * len(input_df.columns)
-                
-                # 基本情報を転記
                 first_row = group.iloc[0]
+                
+                # 基本情報の転記
                 for i in range(len(input_df.columns)):
-                    if pd.notna(first_row[i]):  # null値でない場合のみ値を設定
+                    if pd.notna(first_row[i]):
                         row[i] = str(first_row[i]).strip()
                 
                 # 商品情報の処理
+                has_error = False
                 for i, (_, item) in enumerate(group.iterrows()):
                     product_code = str(item[26]).strip() if pd.notna(item[26]) else ""
                     product_name = str(item[27]).strip() if pd.notna(item[27]) else ""
                     
-                    # 商品名の空欄チェック
                     if not product_name or product_name == 'nan':
+                        has_error = True
                         st.session_state.error_items.append({
                             'order_id': order_id,
                             'product_code': product_code,
                             'index': i,
-                            'row': row.copy()  # 現在の行データをコピー
+                            'row': row.copy()
                         })
                         continue
                     
@@ -52,34 +47,46 @@ def convert_to_hatabarai(input_df):
                     elif i > 1:
                         raise ValueError(f"受注ID {order_id} に3つ以上の商品が含まれています。")
                 
-                if not any(err['order_id'] == order_id for err in st.session_state.error_items):
-                    result_rows.append(row)
-        
-        # エラーアイテムの処理
-        if st.session_state.error_items:
+                if not has_error:
+                    st.session_state.result_rows.append(row)
+            
+            if st.session_state.error_items:
+                st.session_state.conversion_state = 'need_input'
+            else:
+                st.session_state.conversion_state = 'complete'
+
+        # 商品名入力が必要な場合の処理
+        if st.session_state.conversion_state == 'need_input':
             st.warning("以下の商品について、商品名が空欄です。商品名を入力してください。")
             
-            # フォームを使用して入力を管理
-            with st.form("product_names_form"):
-                # エラーのある商品ごとに入力フィールドを表示
-                for item in st.session_state.error_items:
-                    st.write(f"注文ID: {item['order_id']}, 商品コード: {item['product_code']}")
-                    key = f"product_name_{item['order_id']}_{item['product_code']}"
-                    input_value = st.text_input(
-                        f"商品名を入力",
-                        key=key,
-                        value=st.session_state.product_names.get(key, "")
-                    )
-                    st.session_state.product_names[key] = input_value
+            with st.form(key="product_names_form"):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    for item in st.session_state.error_items:
+                        key = f"product_name_{item['order_id']}_{item['product_code']}"
+                        st.text_input(
+                            f"商品名を入力（注文ID: {item['order_id']}, 商品コード: {item['product_code']}）",
+                            key=key,
+                            value=st.session_state.product_names.get(key, "")
+                        )
                 
-                # フォームのサブミットボタン
-                submitted = st.form_submit_button("入力した商品名で続行")
+                submitted = st.form_submit_button(
+                    "入力した商品名で続行",
+                    use_container_width=True,
+                    type="primary"
+                )
+                
                 if submitted:
-                    # すべての商品名が入力されているか確認
-                    all_filled = all(value.strip() != "" for value in st.session_state.product_names.values())
+                    # 入力値を保存
+                    for item in st.session_state.error_items:
+                        key = f"product_name_{item['order_id']}_{item['product_code']}"
+                        value = st.session_state[key]
+                        if value.strip():
+                            st.session_state.product_names[key] = value
                     
-                    if all_filled:
-                        # 入力された商品名を使用してresult_rowsを更新
+                    # すべての入力が完了しているか確認
+                    if len(st.session_state.product_names) == len(st.session_state.error_items):
+                        # 入力された商品名でデータを更新
                         for item in st.session_state.error_items:
                             row = item['row']
                             key = f"product_name_{item['order_id']}_{item['product_code']}"
@@ -87,30 +94,36 @@ def convert_to_hatabarai(input_df):
                                 row[27] = st.session_state.product_names[key]
                             elif item['index'] == 1:
                                 row[29] = st.session_state.product_names[key]
-                            result_rows.append(row)
+                            st.session_state.result_rows.append(row)
                         
-                        # セッションステートをクリア
-                        st.session_state.error_items = []
-                        st.session_state.product_names = {}
+                        st.session_state.conversion_state = 'complete'
                     else:
                         st.error("すべての商品名を入力してください。")
                         return None
+
+        # 変換完了時の処理
+        if st.session_state.conversion_state == 'complete':
+            if not st.session_state.result_rows:
+                raise ValueError("変換結果が空です。入力データを確認してください。")
             
-            if not submitted:
-                return None
+            # 結果のDataFrame作成
+            result_df = pd.DataFrame(st.session_state.result_rows)
+            
+            # 1行目に空行を追加
+            empty_row = [""] * len(input_df.columns)
+            result_df = pd.concat([pd.DataFrame([empty_row]), result_df], ignore_index=True)
+            
+            # セッションステートをクリア
+            st.session_state.conversion_state = 'initial'
+            st.session_state.error_items = []
+            st.session_state.product_names = {}
+            st.session_state.result_rows = []
+            
+            return result_df
         
-        if not result_rows:
-            raise ValueError("変換結果が空です。入力データを確認してください。")
-        
-        # 結果のDataFrame作成
-        result_df = pd.DataFrame(result_rows)
-        
-        # 1行目に空行を追加
-        empty_row = [""] * len(input_df.columns)
-        result_df = pd.concat([pd.DataFrame([empty_row]), result_df], ignore_index=True)
-        
-        return result_df
+        return None
         
     except Exception as e:
         st.error(f"データ処理中にエラーが発生しました: {str(e)}")
+        st.session_state.conversion_state = 'initial'
         return None
