@@ -40,8 +40,8 @@ def combine_rows_by_order_id_new(df):
         group = group.reset_index(drop=True)
         base_row = group.loc[0].copy()
         if len(group) > 1:
-            base_row[28] = group.loc[1][26]
-            base_row[29] = group.loc[1][27]
+            base_row[28] = group.loc[1][26]   # 2行目の商品ID → AC列 (列28)
+            base_row[29] = group.loc[1][27]   # 2行目の商品名 → AD列 (列29)
         else:
             base_row[28] = ""
             base_row[29] = ""
@@ -51,21 +51,31 @@ def combine_rows_by_order_id_new(df):
 
 # --- まとめたデータのうち、商品名の入力が必要な箇所をチェックする ---
 def check_missing_product_names_combined(df):
+    """
+    まとめた後の DataFrame について、
+      - 1つ目の商品名（列27）が空欄ならエラーとし、商品ID（列26）も返す。
+      - もし2つ目の商品が存在する（AC列＝28が空でない）場合、2つ目の商品名（列29）が空欄ならエラーとし、商品ID（列28）も返す。
+    各エラー項目は、{'order_id':…, 'position': 'first' or 'second', 'row_index': …, 'product_id': …} の形式とする。
+    """
     errors = []
     for idx, row in df.iterrows():
         order_id = row[32]
+        # 1つ目の商品名：列27　（対応する商品ID：列26）
         if not (pd.notna(row[27]) and str(row[27]).strip()):
             errors.append({
                 'order_id': order_id,
                 'position': 'first',
-                'row_index': idx
+                'row_index': idx,
+                'product_id': row[26] if pd.notna(row[26]) else ""
             })
+        # 2つ目の商品が存在するかどうかは、AC列（28）が空でないかで判断
         if pd.notna(row[28]) and str(row[28]).strip():
             if not (pd.notna(row[29]) and str(row[29]).strip()):
                 errors.append({
                     'order_id': order_id,
                     'position': 'second',
-                    'row_index': idx
+                    'row_index': idx,
+                    'product_id': row[28]
                 })
     return errors
 
@@ -86,7 +96,7 @@ def main():
         try:
             input_df = pd.read_csv(uploaded_file, encoding='cp932', dtype=str, header=None)
             
-            # --- 発送先住所（例：列11）のスペース除去処理 ---
+            # --- 発送先住所（例：列11）のスペース除去処理（必要に応じて列番号を調整） ---
             if 11 in input_df.columns:
                 input_df[11] = input_df[11].apply(
                     lambda x: x.replace(" ", "").replace("　", "") if isinstance(x, str) else x
@@ -104,22 +114,25 @@ def main():
                     st.write(f"注文ID: {warn['order_id']}　商品数: {warn['product_count']}　商品コード: {', '.join(warn['products'])}")
                 st.write("---")
             
+            # 受注IDごとに行をまとめる
             combined_df = combine_rows_by_order_id_new(input_df)
             st.write('【受注ID統合後のデータプレビュー】')
             st.dataframe(combined_df.head(3))
             
+            # 欠損している商品名のチェック（かつ商品IDもエラー項目に含める）
             error_items = check_missing_product_names_combined(combined_df)
             if error_items:
                 st.warning("以下の受注IDについて、商品名の入力が必要です。")
                 with st.form("product_names_combined_form"):
                     for item in error_items:
                         order_id = item['order_id']
+                        product_id = item['product_id']
                         if item['position'] == 'first':
-                            st.write(f"【受注ID: {order_id}】1つ目の商品名（列27）が空欄です。")
+                            st.write(f"【受注ID: {order_id}】【商品ID: {product_id}】1つ目の商品名（列27）が空欄です。")
                             key = f"product_name_{order_id}_first"
                             st.text_input("商品名を入力してください", key=key)
                         elif item['position'] == 'second':
-                            st.write(f"【受注ID: {order_id}】2つ目の商品名（列29）が空欄です。")
+                            st.write(f"【受注ID: {order_id}】【商品ID: {product_id}】2つ目の商品名（列29）が空欄です。")
                             key = f"product_name_{order_id}_second"
                             st.text_input("商品名を入力してください", key=key)
                     submitted = st.form_submit_button("入力した商品名で更新")
@@ -131,10 +144,12 @@ def main():
                         if item['position'] == 'first':
                             key = f"product_name_{order_id}_first"
                             value = st.session_state.get(key, "").strip()
+                            # 1つ目の商品名は列27（0-based）
                             combined_df.at[row_idx, 27] = value
                         elif item['position'] == 'second':
                             key = f"product_name_{order_id}_second"
                             value = st.session_state.get(key, "").strip()
+                            # 2つ目の商品名は列29（0-based）
                             combined_df.at[row_idx, 29] = value
                     st.session_state.converted_df = combined_df
                     st.success("商品名の更新が完了しました！")
@@ -142,6 +157,7 @@ def main():
                 st.session_state.converted_df = combined_df
                 st.success("受注ID統合処理が完了しました。")
             
+            # --- 変換結果のダウンロード ---
             if st.session_state.converted_df is not None:
                 st.write("【変換後（統合＆商品名更新後）のデータプレビュー（最初の3行）】")
                 st.dataframe(st.session_state.converted_df.head(3))
