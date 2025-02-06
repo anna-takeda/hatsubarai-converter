@@ -184,15 +184,16 @@ def main():
                 st.write("変換後（統合後）のデータプレビュー（最初の3行）:")
                 st.dataframe(st.session_state.converted_df.head(3))
                 
-                output = io.BytesIO()
-                st.session_state.converted_df.to_csv(output, encoding='cp932', index=False, header=False, errors='ignore')
-                output.seek(0)
+                # CSVの内容を文字列として生成
+                csv_str = st.session_state.converted_df.to_csv(index=False, header=False, errors='ignore')
+                # cp932 でエンコードしてバイト列に変換
+                csv_bytes = csv_str.encode('cp932')
                 
                 st.download_button(
                     label='変換済みCSVをダウンロード',
-                    data=output.getvalue(),
+                    data=csv_bytes,
                     file_name='hatabarai_output.csv',
-                    mime='application/octet-stream'
+                    mime='application/octet-stream'  # もしくは mime='text/csv' でもOK
                 )
                 
                 if st.button('新しい変換を開始'):
@@ -200,6 +201,9 @@ def main():
                         if key in st.session_state:
                             del st.session_state[key]
                     st.experimental_rerun()
+
+                
+
                     
         except Exception as e:
             st.error(f'⚠️ CSVファイルの読み込みに失敗しました: {str(e)}')
