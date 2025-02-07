@@ -147,14 +147,15 @@ def main():
                         idx = item['row_index']
                         if item['position'] == 'first':
                             key = f"product_name_{order_id}_first"
-                            # 入力された値があれば、その行の列27のみ更新
                             if key in st.session_state and st.session_state[key].strip():
                                 value = st.session_state[key].strip()
+                                # 1つ目の商品名は 0-based で 27 列目に更新
                                 combined_df.loc[idx, 27] = value
                         elif item['position'] == 'second':
                             key = f"product_name_{order_id}_second"
                             if key in st.session_state and st.session_state[key].strip():
                                 value = st.session_state[key].strip()
+                                # 2つ目の商品名は 0-based で 29 列目に更新
                                 combined_df.loc[idx, 29] = value
                     st.session_state.converted_df = combined_df
                     st.success("商品名の更新が完了しました！")
@@ -167,7 +168,11 @@ def main():
                 st.write("【変換後（統合＆商品名更新後）のデータプレビュー（最初の3行）】")
                 st.dataframe(st.session_state.converted_df.head(3))
                 
-                csv_str = st.session_state.converted_df.to_csv(index=False, header=False, errors='ignore')
+                # 先頭行を空欄にするための DataFrame を作成
+                empty_row = pd.DataFrame([[""] * st.session_state.converted_df.shape[1]], columns=st.session_state.converted_df.columns)
+                final_df = pd.concat([empty_row, st.session_state.converted_df], ignore_index=True)
+                
+                csv_str = final_df.to_csv(index=False, header=False, errors='ignore')
                 csv_bytes = csv_str.encode('cp932')
                 
                 st.download_button(
